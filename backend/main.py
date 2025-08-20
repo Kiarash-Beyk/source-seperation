@@ -95,7 +95,7 @@ async def list_stems(song_name: str):
 # API endpoint to serve individual stems
 @app.get("/stems/{folder_name}/{filename}")
 def get_stem_file(folder_name: str, filename: str):
-    file_path = os.path.join("output", folder_name, filename)
+    file_path = os.path.join(OUTPUT_DIR, folder_name, filename)
     print('got the audio')
     if not os.path.exists(file_path):
         print('coudnt get audio')

@@ -4,9 +4,7 @@ from demucs.apply import apply_model
 import torchaudio
 import soundfile as sf
 import os
-import numpy as np
-import typing
-from pydub import AudioSegment
+
 
  # song_name
 # song="reza-sobhani.mp3"
