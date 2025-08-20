@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stem Separation Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+</head>
+<body class=" bg-gray-100 flex flex-col items-center justify-center min-h-screen">
+
+<div x-data="uploadApp()" class="w-full bg-white shadow-lg rounded-lg p-6 m-2 w-full max-w-lg">
+    <h1 class="text-2xl font-bold mb-4 text-center">Stem Separation</h1>
+
+    <!-- File Input -->
+    <input type="file" @change="fileChosen" class="mb-4 block w-full text-sm text-gray-700 border rounded p-2">
+
+    <!-- Upload Button -->
+    <button 
+        type="button"
+        @click="uploadFile"
+        :disabled="!file"
+        class="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 disabled:bg-gray-400">
+        seperatte
+    </button>
+
+    <!-- Status -->
+    <div  class="mt-4 text-center" x-show="status">
+        <p x-text="status"></p>
+    </div>
+
+</div>
+
+
+    <!-- folder section -->
+<div x-data="folderBrowser()" class="flex flex-col items-center mt-4">
+
+    <div class="flex flex-row items-center justify-center mb-4">
+
+        <button @click="getFolders"
+            class="p-2 mr-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600">
+            Refresh
+        </button>
+        <select 
+            x-model="selectedFolder"
+            @change="cacheStems"
+            class="max-w-[375px] p-2 border rounded-lg bg-white shadow focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+            <option value="" class="text-center ">--------- Select a Folder ---------</option>
+            <template x-for="f in test_folders" :key="f">
+                <option :value="f" x-text="f"></option>
+                
+            </template>
+        </select>
+    </div>
+
+
+    <div class="w-full bg-white shadow-lg rounded-lg p-6 space-y-6">
+
+    <!-- Play / Pause + Timeline -->
+    <div class="flex items-center space-x-3">
+        <button 
+        class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition disabled:bg-blue-300"
+        @click="playAll"
+        :disabled="Object.keys(stemsAudioBuffer).length <4"
+        >
+        Play
+        </button>
+        <button 
+        class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition  disabled:bg-gray-400"
+        @click="pauseAll"
+        :disabled="Object.keys(stemsAudioBuffer).length <4"
+        >
+        Pause
+        </button>
+
+
+        <!-- Master Volume -->
+
+        <input 
+        type="range" 
+        min="0" 
+        max="1" 
+        step="0.01" 
+        x-model="masterVolume" 
+        @input="updateMasterVolume($event.target.value)"
+        class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+        >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-9">
+  <path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25l4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z" />
+</svg>
+    </div>
+
+        <!-- Timeline Slider -->
+    <div class="flex items-center space-x-3">
+        <span x-text=" `${formatTime(currentTime)} `"></span>
+
+            <input 
+        type="range" 
+        min="0" 
+        :max="duration" 
+        step="0.1" 
+        x-model="currentTime"
+        @mousedown="seekStart()"
+        @input="seekTo($event.target.value)"
+        @mouseup="seekEnd()"
+        @touchstart="seekStart()"
+        @touchend="seekEnd()"
+        class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-red-500"
+        >
+        <span x-text=" `${formatTime(duration)} `"></span>
+
+
+
+    </div>
+
+    <!-- Instrument Volume Controls -->
+    <div class="space-y-3">
+        <template x-for="ins in instruments" :key="ins">
+        <div class="flex items-center justify-between bg-gray-50 p-3 rounded-lg shadow-sm">
+            <div class="font-medium text-gray-700 w-24" x-text="ins"></div>
+            
+            <input 
+            type="range" 
+            min="0" 
+            max="1" 
+            step="0.01" 
+            x-model="volumes[ins]"
+            @input="updateVolume(ins, $event.target.value)"
+            class="flex-1 mx-4 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+            >
+            
+            <span class="text-sm text-gray-600 w-12 text-right" 
+            x-text="(volumes[ins] * 100).toFixed(0) + '%'">
+            </span>
+            
+            <button 
+            @click="muteVolume(ins)" 
+            class="ml-3 px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600 transition"
+            >
+            Mute
+            </button>
+            <button 
+                @click="downloadStem(ins)" 
+                class="ml-3 px-3 py-1 bg-white text-sm rounded hover:text-blue-700 transition"
+                title="Download this stem"
+                :disabled="!selectedFolder"
+                :class="{ 'opacity-50 cursor-not-allowed': !selectedFolder }"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+            </button>
+        </div>
+        </template>
+    </div>
+
+    <div 
+        x-show="status"  
+        class="fixed bottom-4 left-4 text-sm text-red-700 bg-white shadow-lg px-3 py-2 rounded"
+    >
+        <p x-text="status"></p>
+    </div>
+    </div>
+
+</div>
+
+
+            
+
+
+</body>
+
+<script>
+
+    function uploadApp() {
+    return {
+        file: null,
+        status: "",
+
+        
+        fileChosen(event) {
+            this.file = event.target.files[0];
+        }, 
+        
+        
+        async uploadFile() {
+            if (!this.file) return;
+            
+            let formData = new FormData();
+            formData.append("file", this.file);
+            this.status = "Uploading...";
+
+            try {
+                
+                let response = await axios.post('/seperate', formData, {
+                    headers: { "Content-Type": "multipart/form-data" }
+                });
+
+                // axios data is in response.data, not response.json()
+                if (response.data.success) {
+                    this.status = `Success! File: ${response.data.fileName}` 
+                    console.log(response.data.fileName)
+                } else {
+                    this.status = " Error: " + (response.data.error || "Unknown error");
+                }
+            } catch (error) {
+                // Better error handling
+                if (error.response) {
+                    this.status = " Server error: " + error.response.data.error;
+                } else {
+                    this.status = "Connection error: " + error.message;
+                }
+            }
+        }
+
+    }
+}
+
+function folderBrowser() {
+    return {
+        status:"",
+        test_folders: [],
+        selectedFolder: "",
+        instruments: ["vocals", "other", "drums", "bass"],
+        stemsAudioBuffer: {},
+        audioCtx: null,
+        sources: [],
+        isPlaying: false,
+        wasPlaying : false,
+        resumeOffset: 0,
+        playingSince: 0,
+        currentRequestAbortController: null, // To handle request cancellation
+        gainNodes: {},
+        volumes :{
+            vocals: 1.0 ,
+            other: 1.0 ,
+            drums: 1.0 ,
+            bass: 1.0
+        },
+        beforeMute:{
+            vocals: 0 ,
+            other: 0 ,
+            drums: 0 ,
+            bass: 0
+        },
+        masterVolume: 0.5, // Add master volume (0 to 1)
+        masterGainNode: null, // Master gain node
+
+        //for audio playback current time
+        currentTime: 0, // Current playback position in seconds
+        duration: 0, // Total duration of the track
+        isSeeking: false, // Flag to prevent updates during seek
+        seekInterval: null, // For updating the timeline during playback
+        
+
+        async getFolders() {
+            try {
+                let res = await axios.get("/output-folder");
+                this.test_folders = res.data.folders;
+            } catch (err) {
+                console.error(`something happened to folders: ${err}`);
+            }
+            this.resetAll();
+        },
+        
+        downloadStem(instrument) {
+            if (!this.selectedFolder) return;
+            
+            const stemName = `${instrument}.flac`;
+            const downloadUrl = `/download/${this.selectedFolder}/${stemName}`;
+            
+            // Create temporary link for download
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = stemName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        },
+
+        async cacheStems() {
+            if (!this.selectedFolder) return;
+
+            // Cancel any ongoing requests
+            if (this.currentRequestAbortController) {
+                this.currentRequestAbortController.abort();
+            }
+
+            this.resetAll();
+            this.stemsAudioBuffer = {}; // Clear previous buffers
+
+            if (!this.audioCtx) {
+                this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            try {
+                this.currentRequestAbortController = new AbortController();
+                
+                const promises = this.instruments.map(ins => {
+                    return axios.get(
+                        `/stems/${this.selectedFolder}/${ins}.flac`,
+                        { 
+                            responseType: "blob",
+                            signal: this.currentRequestAbortController.signal
+                        }
+                    );
+                });
+
+                const results = await Promise.all(promises);
+
+                // Clear any previous buffers
+                this.stemsAudioBuffer = {};
+
+                for (let i = 0; i < results.length; i++) {
+                    const ins = this.instruments[i];
+                    const blob = results[i].data;
+                    const arrayBuffer = await blob.arrayBuffer();
+                    const audioBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
+                    this.stemsAudioBuffer[ins] = audioBuffer;
+                }
+
+                console.log("Cached stems:", this.stemsAudioBuffer);
+                this.status = "Cached stems"
+            } catch (err) {
+                if (err.name !== 'CanceledError') {
+                    console.log("Failed to fetch:", err);
+                    this.status = "Failed to fetch see logs"
+                }
+            } finally {
+                this.currentRequestAbortController = null;
+            }
+
+            // for timeline control
+             if (Object.keys(this.stemsAudioBuffer).length > 0) {
+                const firstStem = Object.values(this.stemsAudioBuffer)[0];
+                this.duration = firstStem.duration;
+            }
+        },
+
+
+        // Modified initAudioContext to ensure it's ready
+        async initAudioContext() {
+            if (!this.audioCtx) {
+                this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                await this.setupMasterGain(); // Make this async
+            }
+            // Resume if suspended
+            if (this.audioCtx.state === 'suspended') {
+                await this.audioCtx.resume();
+            }
+        },
+
+        // Make setupMasterGain async to ensure completion
+        async setupMasterGain() {
+            this.masterGainNode = this.audioCtx.createGain();
+            this.masterGainNode.gain.value = this.masterVolume;
+            this.masterGainNode.connect(this.audioCtx.destination);
+            return new Promise(resolve => {
+                // Small delay to ensure node is ready
+                setTimeout(resolve, 50);
+            });
+        },
+
+        // Update master volume
+        updateMasterVolume(value) {
+            this.masterVolume = value;
+            if (this.masterGainNode) {
+                this.masterGainNode.gain.value = value;
+            }
+        },
+
+        async playAll() {
+            try {
+                await this.initAudioContext(); // Wait for context to be ready
+                
+                if (this.isPlaying) return;
+                if (Object.keys(this.stemsAudioBuffer).length === 0) return;
+
+                // Ensure masterGainNode exists
+                if (!this.masterGainNode) {
+                    await this.setupMasterGain();
+                }
+
+                const startTime = this.audioCtx.currentTime + 0.05;
+                this.playingSince = this.audioCtx.currentTime;
+
+                this.stopAllSources();
+                this.sources = []; 
+                this.gainNodes = {};
+
+                for (let [ins, buffer] of Object.entries(this.stemsAudioBuffer)) {
+                    if (!buffer) continue;
+
+                    const gainNode = this.audioCtx.createGain();
+                    gainNode.gain.value = this.volumes[ins];
+                    
+                    // Verify nodes exist before connecting
+                    if (!gainNode) throw new Error("Gain node not created");
+                    if (!this.masterGainNode) throw new Error("Master gain not ready");
+                    
+                    gainNode.connect(this.masterGainNode);
+                    this.gainNodes[ins] = gainNode;
+
+                    const source = this.audioCtx.createBufferSource();
+                    source.buffer = buffer;
+                    source.connect(gainNode);
+                    source.start(startTime, this.resumeOffset);
+                    
+                    this.sources.push(source);
+                }
+
+                this.isPlaying = true;
+
+                 // Start timeline updates
+                 this.startTimelineUpdates();
+
+            } catch (error) {
+                console.error("Playback error:", error);
+                this.resetAll();
+            }
+        },
+
+        // to update volume
+        updateVolume(instrument, value) {
+            this.volumes[instrument] = value;
+            
+            // If currently playing, update the gain node immediately
+            if (this.gainNodes[instrument]) {
+                this.gainNodes[instrument].gain.value = value;
+            }
+        },
+        muteVolume(instrument) {
+            // Initialize beforeMute if it doesn't exist
+            if (!this.beforeMute) {
+                this.beforeMute = {};
+            }
+            
+            // If currently muted (volume is 0), restore previous volume
+            if (this.volumes[instrument] === 0) {
+                this.volumes[instrument] = this.beforeMute[instrument] || 1.0; // Default to 1.0 if no beforeMute value
+            } 
+            // If not muted, store current volume and mute
+            else {
+                this.beforeMute[instrument] = this.volumes[instrument];
+                this.volumes[instrument] = 0;
+            }
+
+            // Update the actual gain node if it exists
+            if (this.gainNodes[instrument]) {
+                this.gainNodes[instrument].gain.value = this.volumes[instrument];
+            }
+        },
+        pauseAll() {
+            if (!this.isPlaying) return;
+
+            const elapsed = this.audioCtx.currentTime - this.playingSince;
+            this.resumeOffset += elapsed;
+
+            this.stopAllSources();
+            this.isPlaying = false;
+
+             // Stop timeline updates
+            this.stopTimelineUpdates();
+        },
+
+        stopAllSources() {
+            this.sources.forEach(src => {
+                try {
+                    src.stop();
+                    src.disconnect();
+                } catch (e) {
+                    console.warn("Error stopping source:", e);
+                }
+            });
+            this.sources = [];
+        },
+        // Timeline control methods
+        startTimelineUpdates() {
+            this.stopTimelineUpdates();
+            this.seekInterval = setInterval(() => {
+                if (!this.isSeeking && this.isPlaying) {
+                    const elapsed = this.audioCtx.currentTime - this.playingSince;
+                    this.currentTime = this.resumeOffset + elapsed;
+                }
+            }, 100);
+        },
+
+        stopTimelineUpdates() {
+            if (this.seekInterval) {
+                clearInterval(this.seekInterval);
+                this.seekInterval = null;
+            }
+        },
+
+        // Handle timeline seeking
+        seekStart() {
+            this.isSeeking = true;
+            if(this.isPlaying){
+                this.wasPlaying=true
+            }else{
+                this.wasPlaying=false
+            }
+            this.pauseAll();
+        },
+
+        async seekTo(time) {
+            this.currentTime = Math.max(0, Math.min(time, this.duration));
+            
+            // Update resume offset for when playback resumes
+            this.resumeOffset = this.currentTime;
+            
+            // If playing, restart playback from new position
+            if (this.isPlaying) {
+                this.playAll();
+                console.log('is playing')
+            }
+        },
+
+        seekEnd() {
+            this.isSeeking = false;
+            if (this.wasPlaying) {
+                this.playAll();
+                
+            }
+            
+        },
+
+        // Format time for display (MM:SS)
+        formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        },
+
+        resetAll() {
+            this.stopAllSources();
+             // Clean up gain nodes
+            Object.values(this.gainNodes).forEach(gainNode => {
+                gainNode.disconnect();
+            });
+            this.gainNodes = {};
+            this.resumeOffset = 0;
+            this.isPlaying = false;
+        },
+
+        init() {
+            this.getFolders();
+        }
+    };
+}
+</script>
+</html>
