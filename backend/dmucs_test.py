@@ -24,8 +24,8 @@ def space_remover(song_name):
 def seperate(input_path : str):
 
     # song names
-    song_name = space_remover(os.path.basename(input_path))
-    song_name_without_extension = space_remover(song_name.replace(".mp3" , "" )) 
+    song_name = os.path.basename(input_path)
+    song_name_without_extension = song_name.replace(".mp3" , "" )
 
     #set path and dir 
     try:

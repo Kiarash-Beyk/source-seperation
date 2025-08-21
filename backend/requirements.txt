@@ -12,6 +12,5 @@ numpy==1.26.4
 pydub==0.25.1
 librosa==0.10.1
 
-# Demucs for stem separation
-demucs==4.0.3
-
+# Demucs from GitHub (not available on PyPI)
+git+https://github.com/facebookresearch/demucs.git

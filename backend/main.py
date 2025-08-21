@@ -23,6 +23,14 @@ app.add_middleware(
 async def read_root():
     return FileResponse("../frontend/index.html")
 
+# Add this route to serve JS files with correct MIME type
+@app.get("/js/{filename}")
+async def serve_js(filename: str):
+    js_path = f"../frontend/js/{filename}"
+    if os.path.exists(js_path):
+        return FileResponse(js_path, media_type="application/javascript")
+    raise HTTPException(status_code=404, detail="File not found")
+
 
 @app.get("/items/{item_id}")
 def read_item(item_id: int, q: Union[str, None] = None):
