@@ -108,64 +108,110 @@ function folderBrowser() {
             document.body.removeChild(link);
         },
 
-        async cacheStems() {
-            if (!this.selectedFolder) return;
+async cacheStems() {
+    if (!this.selectedFolder) return;
 
-            // Cancel any ongoing requests
-            if (this.currentRequestAbortController) {
-                this.currentRequestAbortController.abort();
-            }
+    // Cancel any ongoing requests
+    if (this.currentRequestAbortController) {
+        this.currentRequestAbortController.abort();
+    }
 
-            this.resetAll();
-            this.stemsAudioBuffer = {}; // Clear previous buffers
+    // PROPER cleanup with memory management
+    this.resetAll();
+    this.stemsAudioBuffer = {};
+    
+    // Wait for cleanup to complete
+    await new Promise(resolve => setTimeout(resolve, 200));
 
-            if (!this.audioCtx) {
-                this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
+    if (!this.audioCtx) {
+        this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
 
+    try {
+        this.currentRequestAbortController = new AbortController();
+        const results = [];
+        
+        // Load stems SEQUENTIALLY with proper memory management
+        for (const ins of this.instruments) {
             try {
-                this.currentRequestAbortController = new AbortController();
+                this.catchStatus = `Loading ${ins}...`;
                 
-                const promises = this.instruments.map(ins => {
-                    return axios.get(
-                        `/stems/${this.selectedFolder}/${ins}.flac`,
-                        { 
-                            responseType: "blob",
-                            signal: this.currentRequestAbortController.signal
-                        }
-                    );
-                });
+                const response = await axios.get(
+                    `/stems/${this.selectedFolder}/${ins}.flac`,
+                    { 
+                        responseType: "blob",
+                        signal: this.currentRequestAbortController.signal,
+                        timeout: 30000 // 30 second timeout
+                    }
+                );
+                
+                results.push({ ins, data: response.data, success: true });
+                
+            } catch (error) {
+                console.error(`Failed to load ${ins}:`, error);
+                results.push({ ins, error, success: false });
+                
+                // Continue with other stems even if one fails
+                this.catchStatus = `Skipped ${ins}, continuing...`;
+            }
+            
+            // CRITICAL: Add delay between requests
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
 
-                const results = await Promise.all(promises);
+        if (results.length < 4) {
+            console.log('Missing stems:', results.length);
+            this.catchStatus = `Only ${results.length}/4 stems loaded`;
+        }
 
-                // Clear any previous buffers
-                this.stemsAudioBuffer = {};
+        // Process results with memory management
+        this.stemsAudioBuffer = {};
+        let successCount = 0;
 
-                for (let i = 0; i < results.length; i++) {
-                    const ins = this.instruments[i];
-                    const blob = results[i].data;
-                    const arrayBuffer = await blob.arrayBuffer();
+        for (const result of results) {
+            if (result.success) {
+                try {
+                    this.catchStatus = `Processing ${result.ins}...`;
+                    
+                    const arrayBuffer = await result.data.arrayBuffer();
                     const audioBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
-                    this.stemsAudioBuffer[ins] = audioBuffer;
+                    
+                    this.stemsAudioBuffer[result.ins] = audioBuffer;
+                    successCount++;
+                    
+                    // Free memory from the blob immediately
+                    result.data = null;
+                    
+                    this.catchStatus = `Processed ${successCount}/${results.length}`;
+                    
+                } catch (processingError) {
+                    console.error(`Failed to process ${result.ins}:`, processingError);
                 }
-
-                console.log("Cached stems:", this.stemsAudioBuffer);
-                this.catchStatus = "Cached stems"
-            } catch (err) {
-                if (err.name !== 'CanceledError') {
-                    console.log("Failed to fetch:", err);
-                    this.catchStatus = "Failed to fetch see logs"
-                }
-            } finally {
-                this.currentRequestAbortController = null;
             }
+            
+            // Add small delay between processing
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
 
-            // for timeline control
-             if (Object.keys(this.stemsAudioBuffer).length > 0) {
-                const firstStem = Object.values(this.stemsAudioBuffer)[0];
-                this.duration = firstStem.duration;
-            }
-        },
+        console.log("Cached stems:", Object.keys(this.stemsAudioBuffer));
+        this.catchStatus = `Loaded ${successCount}/${this.instruments.length} stems`;
+
+        // Set duration if we have at least one stem
+        if (Object.keys(this.stemsAudioBuffer).length > 0) {
+            const firstStem = Object.values(this.stemsAudioBuffer)[0];
+            this.duration = firstStem.duration;
+        }
+
+    } catch (err) {
+        if (err.name !== 'CanceledError') {
+            console.error("Failed to cache stems:", err);
+            this.catchStatus = "Failed to load stems - see console";
+        }
+    } finally {
+        this.currentRequestAbortController = null;
+        // Force garbage collection after operation
+    }
+},
 
 
         // Modified initAudioContext to ensure it's ready
@@ -198,7 +244,6 @@ function folderBrowser() {
                 this.masterGainNode.gain.value = value;
             }
         },
-
         async playAll() {
             try {
                 await this.initAudioContext(); // Wait for context to be ready
@@ -206,8 +251,8 @@ function folderBrowser() {
                 if (this.isPlaying) return;
                 if (Object.keys(this.stemsAudioBuffer).length === 0) return;
 
-                // Ensure masterGainNode exists
-                if (!this.masterGainNode) {
+                // Ensure masterGainNode exists and belongs to current context
+                if (!this.masterGainNode || this.masterGainNode.context !== this.audioCtx) {
                     await this.setupMasterGain();
                 }
 
@@ -216,11 +261,12 @@ function folderBrowser() {
 
                 this.stopAllSources();
                 this.sources = []; 
-                this.gainNodes = {};
+                this.gainNodes = {}; // Clear previous gain nodes
 
                 for (let [ins, buffer] of Object.entries(this.stemsAudioBuffer)) {
                     if (!buffer) continue;
 
+                    // Create new gain node for current context
                     const gainNode = this.audioCtx.createGain();
                     gainNode.gain.value = this.volumes[ins];
                     
@@ -241,8 +287,8 @@ function folderBrowser() {
 
                 this.isPlaying = true;
 
-                 // Start timeline updates
-                 this.startTimelineUpdates();
+                // Start timeline updates
+                this.startTimelineUpdates();
 
             } catch (error) {
                 console.error("Playback error:", error);
@@ -363,17 +409,30 @@ function folderBrowser() {
         },
 
         resetAll() {
-            this.stopAllSources();
-             // Clean up gain nodes
-            Object.values(this.gainNodes).forEach(gainNode => {
-                gainNode.disconnect();
-            });
-            this.gainNodes = {};
-            this.resumeOffset = 0;
-            this.isPlaying = false;
+    // Stop all audio sources
+        this.stopAllSources();
+        
+        // Close and null the audio context
+        if (this.audioCtx) {
+            this.audioCtx.close().catch(() => {});
+            this.audioCtx = null;
+        }
+        
+        // Clear all buffers and state
+        this.stemsAudioBuffer = {};
+        this.sources = [];
+        this.gainNodes = {};
+        this.resumeOffset = 0;
+        this.isPlaying = false;
+        this.sources=[]
+        // Force garbage collection (where supported)
+        if (window.gc) {
+            window.gc();
+        }
         },
 
         init() {
+            this.resetAll()
             this.getFolders();
         }
     };

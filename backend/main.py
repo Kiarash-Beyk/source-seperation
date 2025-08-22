@@ -111,7 +111,11 @@ def get_stem_file(folder_name: str, filename: str):
     
     return FileResponse(file_path ,
           headers={
-            "Cache-Control": "public, max-age=3600"  # 1 year
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Expose-Headers": "*",
+            "Content-Type": "audio/flac",
+            "Accept-Ranges": "bytes" 
         })
 
 @app.get('/output-folder')
