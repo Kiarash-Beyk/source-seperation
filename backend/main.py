@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse , HTMLResponse
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+
 app = FastAPI()
 
 app.mount("/static", StaticFiles(directory="../frontend"), name="static")
@@ -80,13 +82,16 @@ async def  song_seperator(file:UploadFile = File(...)):
 
 @app.get("/download/{song_name}/{stem_name}")
 async def download_stem(song_name: str, stem_name: str):
-    file_path = os.path.join('./output', song_name, stem_name)
-    
+    file_path = os.path.join(OUTPUT_DIR , song_name , stem_name)
+      # convert to absolute path
+    print("DEBUG: trying to serve", file_path)
+
     if not os.path.exists(file_path):
-        return {"error": "File not found"}
-    
+        print("debug : cant find the file" )
+        raise HTTPException(status_code=404, detail="File not found")
+
     return FileResponse(
-        file_path,
+        str(file_path),  # FileResponse prefers str paths
         media_type="audio/flac",
         filename=stem_name
     )

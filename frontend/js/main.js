@@ -29,7 +29,7 @@ function folderBrowser() {
             drums: 0 ,
             bass: 0
         },
-        masterVolume: 0.5, // Add master volume (0 to 1)
+        masterVolume: 0.3, // Add master volume (0 to 1)
         masterGainNode: null, // Master gain node
 
         //for audio playback current time
@@ -110,7 +110,7 @@ function folderBrowser() {
 
 async cacheStems() {
     if (!this.selectedFolder) return;
-
+    await new Promise(resolve => setTimeout(resolve, 200));
     // Cancel any ongoing requests
     if (this.currentRequestAbortController) {
         this.currentRequestAbortController.abort();
@@ -310,9 +310,14 @@ async cacheStems() {
             if (!this.beforeMute) {
                 this.beforeMute = {};
             }
-            
+
+
             // If currently muted (volume is 0), restore previous volume
-            if (this.volumes[instrument] === 0) {
+             if (this.volumes[instrument] === 0) {
+                if(this.beforeMute[instrument] === undefined || this.beforeMute[instrument] === 0  ){
+                    console.log(this.beforeMute[instrument])
+                    this.beforeMute[instrument] = 0.5;
+                }
                 this.volumes[instrument] = this.beforeMute[instrument] || 1.0; // Default to 1.0 if no beforeMute value
             } 
             // If not muted, store current volume and mute

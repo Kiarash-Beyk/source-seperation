@@ -25,7 +25,7 @@ def seperate(input_path : str):
 
     # song names
     song_name = os.path.basename(input_path)
-    song_name_without_extension = song_name.replace(".mp3" , "" )
+    song_name_without_extension, _ = os.path.splitext(song_name)
 
     #set path and dir 
     try:
